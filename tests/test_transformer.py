@@ -1,25 +1,36 @@
 import torch
-from model.transformer import Encoder, SelfAttention, FeedForward
+from model.transformer import Encoder, MultiheadAttention, FeedForward
 
-def test_self_attention():
+
+def test_multihead_attention():
     batch_size = 8
     sequence_length = 16
     hidden_dim = 8
     num_heads = 4
     dropout_prob = 0.3
 
-    self_attention = SelfAttention(
+    multihead_attention = MultiheadAttention(
         hidden_dim=hidden_dim,
         num_heads=num_heads,
         dropout_prob=dropout_prob,
     )
 
-    inputs = torch.rand(batch_size, sequence_length, hidden_dim)
-    attention_mask = 1 - torch.triu(torch.ones(sequence_length, sequence_length)).long().T
+    query = torch.rand(batch_size, sequence_length, hidden_dim)
+    key = torch.rand(batch_size, sequence_length, hidden_dim)
+    value = torch.rand(batch_size, sequence_length, hidden_dim)
+    attention_mask = (
+        1 - torch.triu(torch.ones(sequence_length, sequence_length)).long().T
+    )
     attention_mask = attention_mask.unsqueeze(0)
 
-    outputs = self_attention(inputs, attention_mask)
+    outputs = multihead_attention(
+        query,
+        key,
+        value,
+        attention_mask,
+    )
     assert outputs.size() == (batch_size, sequence_length, hidden_dim)
+
 
 def test_feed_forward():
     batch_size = 8
@@ -35,6 +46,7 @@ def test_feed_forward():
     inputs = torch.rand(batch_size, sequence_length, hidden_dim)
     outputs = feed_forward(inputs)
     assert outputs.size() == (batch_size, sequence_length, hidden_dim)
+
 
 def test_encoder():
     batch_size = 8
@@ -54,7 +66,9 @@ def test_encoder():
     )
 
     inputs = torch.rand(batch_size, sequence_length, hidden_dim)
-    attention_mask = 1 - torch.triu(torch.ones(sequence_length, sequence_length)).long().T
+    attention_mask = (
+        1 - torch.triu(torch.ones(sequence_length, sequence_length)).long().T
+    )
     attention_mask = attention_mask.unsqueeze(0)
 
     outputs = encoder(inputs, attention_mask)
