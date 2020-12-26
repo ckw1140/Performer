@@ -24,10 +24,10 @@ def test_multihead_attention():
     attention_mask = attention_mask.unsqueeze(0)
 
     outputs = multihead_attention(
-        query,
-        key,
-        value,
-        attention_mask,
+        query=query,
+        key=key,
+        value=value,
+        attention_mask=attention_mask,
     )
     assert outputs.size() == (batch_size, sequence_length, hidden_dim)
 
@@ -73,6 +73,7 @@ def test_encoder():
 
     outputs = encoder(inputs, attention_mask)
     assert outputs.size() == (batch_size, sequence_length, hidden_dim)
+
 
 def test_decoder():
     batch_size = 8

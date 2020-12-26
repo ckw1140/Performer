@@ -1,19 +1,23 @@
-import numpy as np
-import torch
 from torch import nn
-from torch.nn import functional as F
 
-from model.utils import gelu
+from model.utils import (
+    gaussian_orthogonal_random_matrix,
+    gelu,
+    linear_attention,
+    nonnegative_softmax_kernel_feature_creator,
+)
 
 
-class MultiheadAttention(nn.Module):
+class FastMultiheadAttention(nn.Module):
     def __init__(
         self,
         hidden_dim,
         num_heads,
-        dropout_prob,
+        projection_dim,
+        scaling=0,
+        qr_uniform_q=False,
     ):
-        super(MultiheadAttention, self).__init__()
+        super(FastMultiheadAttention, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -22,15 +26,14 @@ class MultiheadAttention(nn.Module):
         self.WK = nn.Linear(hidden_dim, hidden_dim)
         self.WV = nn.Linear(hidden_dim, hidden_dim)
         self.WO = nn.Linear(hidden_dim, hidden_dim)
-        self.dropout = nn.Dropout(dropout_prob)
+        self.projection_matrix = gaussian_orthogonal_random_matrix(
+            num_rows=projection_dim,
+            num_cols=self.head_dim,
+            scaling=scaling,
+            qr_uniform_q=qr_uniform_q,
+        )
 
-    def forward(
-        self,
-        query,
-        key,
-        value,
-        attention_mask,
-    ):
+    def forward(self, query, key, value):
         batch_size = query.size()[0]
 
         # [batch_size, num_heads, sequence_length, head_dim]
@@ -38,16 +41,20 @@ class MultiheadAttention(nn.Module):
         K = self.split_heads(self.WK(key), batch_size)
         V = self.split_heads(self.WV(value), batch_size)
 
-        # [batch_size, num_heads, sequence_length, sequence_length]
-        scaled_dot_product = torch.matmul(Q, K.transpose(2, 3)) / torch.sqrt(
-            torch.tensor(self.head_dim).float()
-        )
-        scaled_dot_product += attention_mask.unsqueeze(1)
-        attention_weight = F.softmax(scaled_dot_product, dim=-1)
-        attention_weight = self.dropout(attention_weight)
-
         # [batch_size, num_heads, sequence_length, head_dim]
-        attention_result = torch.matmul(attention_weight, V)
+        Q = nonnegative_softmax_kernel_feature_creator(
+            data=Q,
+            projection_matrix=self.projection_matrix,
+        )
+        K = nonnegative_softmax_kernel_feature_creator(
+            data=K,
+            projection_matrix=self.projection_matrix,
+        )
+        attention_result = linear_attention(
+            query=Q,
+            key=K,
+            value=V,
+        )
 
         # [batch_size, sequence_length, hidden_dim]
         attention_result = attention_result.transpose(1, 2).contiguous()
@@ -84,16 +91,16 @@ class Encoder(nn.Module):
         self,
         hidden_dim,
         num_heads,
-        self_attention_dropout_prob,
+        projection_dim,
         feed_forward_dropout_prob,
         layernorm_epsilon,
     ):
         super(Encoder, self).__init__()
 
-        self.self_attention = MultiheadAttention(
+        self.self_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            dropout_prob=self_attention_dropout_prob,
+            projection_dim=projection_dim,
         )
 
         self.feed_forward = FeedForward(
@@ -104,14 +111,9 @@ class Encoder(nn.Module):
         self.self_attention_layernorm = nn.LayerNorm(hidden_dim, eps=layernorm_epsilon)
         self.feed_forward_layernorm = nn.LayerNorm(hidden_dim, eps=layernorm_epsilon)
 
-    def forward(self, x, attention_mask):
+    def forward(self, x):
         residual = x
-        x = self.self_attention(
-            query=x,
-            key=x,
-            value=x,
-            attention_mask=attention_mask,
-        )
+        x = self.self_attention(x, x, x)
         x = self.self_attention_layernorm(x + residual)
 
         residual = x
@@ -126,23 +128,23 @@ class Decoder(nn.Module):
         self,
         hidden_dim,
         num_heads,
-        self_attention_dropout_prob,
-        dec_enc_attention_dropout_prob,
+        self_attention_projection_dim,
+        dec_enc_attention_projection_dim,
         feed_forward_dropout_prob,
         layernorm_epsilon,
     ):
         super(Decoder, self).__init__()
 
-        self.self_attention = MultiheadAttention(
+        self.self_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            dropout_prob=self_attention_dropout_prob,
+            projection_dim=self_attention_projection_dim,
         )
 
-        self.dec_enc_attention = MultiheadAttention(
+        self.dec_enc_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            dropout_prob=dec_enc_attention_dropout_prob,
+            projection_dim=dec_enc_attention_projection_dim,
         )
 
         self.feed_forward = FeedForward(
@@ -156,23 +158,13 @@ class Decoder(nn.Module):
         )
         self.feed_forward_layernorm = nn.LayerNorm(hidden_dim, eps=layernorm_epsilon)
 
-    def forward(self, x, enc_outputs, self_attention_mask, dec_enc_attention_mask):
+    def forward(self, x, enc_outputs):
         residual = x
-        x = self.self_attention(
-            query=x,
-            key=x,
-            value=x,
-            attention_mask=self_attention_mask,
-        )
+        x = self.self_attention(x, x, x)
         x = self.self_attention_layernorm(x + residual)
 
         residual = x
-        x = self.dec_enc_attention(
-            query=x,
-            key=enc_outputs,
-            value=enc_outputs,
-            attention_mask=dec_enc_attention_mask,
-        )
+        x = self.dec_enc_attention(x, enc_outputs, enc_outputs)
         x = self.dec_enc_attention_layernorm(x + residual)
 
         residual = x
