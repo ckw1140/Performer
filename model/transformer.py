@@ -3,12 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-
-def gelu(x):
-    cdf = 0.5 * (
-        1.0 + torch.tanh((np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
-    )
-    return x * cdf
+from model.utils import gelu
 
 
 class MultiheadAttention(nn.Module):
