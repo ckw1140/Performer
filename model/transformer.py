@@ -107,10 +107,10 @@ class Encoder(nn.Module):
     def forward(self, x, attention_mask):
         residual = x
         x = self.self_attention(
-            x,
-            x,
-            x,
-            attention_mask,
+            query=x,
+            key=x,
+            value=x,
+            attention_mask=attention_mask,
         )
         x = self.self_attention_layernorm(x + residual)
 
@@ -159,19 +159,19 @@ class Decoder(nn.Module):
     def forward(self, x, enc_outputs, self_attention_mask, dec_enc_attention_mask):
         residual = x
         x = self.self_attention(
-            x,
-            x,
-            x,
-            self_attention_mask,
+            query=x,
+            key=x,
+            value=x,
+            attention_mask=self_attention_mask,
         )
         x = self.self_attention_layernorm(x + residual)
 
         residual = x
         x = self.dec_enc_attention(
-            x,
-            enc_outputs,
-            enc_outputs,
-            dec_enc_attention_mask,
+            query=x,
+            key=enc_outputs,
+            value=enc_outputs,
+            attention_mask=dec_enc_attention_mask,
         )
         x = self.dec_enc_attention_layernorm(x + residual)
 
