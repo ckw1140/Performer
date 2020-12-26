@@ -21,7 +21,6 @@ def gelu(x):
 def nonnegative_softmax_kernel_feature_creator(
     data,
     projection_matrix,
-    is_query,
     normalize_data=True,
     eps=1e-4,
 ):
@@ -36,7 +35,7 @@ def nonnegative_softmax_kernel_feature_creator(
 
     data_normalizer = data.size()[-1] ** -0.25 if normalize_data else 1
     ratio = projection_matrix.size()[0] ** -0.5
-    
+
     data_mod_shape = data.size()[:2] + projection_matrix.size()
 
     # [batch_size, num_heads, projection_dim, head_dim]
@@ -56,10 +55,9 @@ def nonnegative_softmax_kernel_feature_creator(
     diag_data = (diag_data / 2.0) * data_normalizer * data_normalizer
     diag_data = diag_data.unsqueeze(-1)
 
-    if is_query:
-        data_dash = ratio * torch.exp(data_dash - diag_data - data_dash.max(dim=-1, keepdim=True).values + eps)
-    else:
-        data_dash = ratio * torch.exp(data_dash - diag_data - data_dash.max(dim=-1).values + eps)
+    data_dash = ratio * torch.exp(
+        data_dash - diag_data - data_dash.max(dim=-1, keepdim=True).values + eps
+    )
 
     return data_dash
 
@@ -115,12 +113,20 @@ def gaussian_orthogonal_random_matrix(
         block_list.append(q[:remaining_rows])
 
     final_matrix = torch.cat(block_list)
-    
+
     if scaling == 0:
         multiplier = torch.rand((num_rows, num_cols), device=device).norm(dim=1)
     elif scaling == 1:
-        multiplier = math.sqrt(num_cols) * torch.ones((num_rows, ), device=device)
+        multiplier = math.sqrt(num_cols) * torch.ones((num_rows,), device=device)
     else:
         raise ValueError(f"Invalid Scaling {scaling}")
 
     return torch.matmul(torch.diag(multiplier), final_matrix)
+
+
+def linear_attention(query, key, value):
+    """
+    query @ (key^T @ value) 를 계산하는 함수입니다.
+    """
+    context = torch.matmul(key.transpose(2, 3), value)
+    return torch.matmul(query, context)
