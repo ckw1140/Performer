@@ -5,6 +5,8 @@ https://github.com/lucidrains/performer-pytorch/blob/main/performer_pytorch/perf
 위의 두 코드를 참고하여 작성한 코드입니다.
 """
 
+import math
+
 import numpy as np
 import torch
 
@@ -62,8 +64,63 @@ def nonnegative_softmax_kernel_feature_creator(
     return data_dash
 
 
+def orthogonal_matrix_chunk(
+    num_cols,
+    qr_uniform_q=False,
+    device=None,
+):
+    """
+    num_cols x num_cols 형태의 Random Orthoginal Matrix 를 생성하는 함수입니다.
+    """
+    unstructured_block = torch.rand((num_cols, num_cols))
+    q, r = torch.qr(unstructured_block.cpu(), some=True)
+    q = q.to(device)
+    r = r.to(device)
+
+    if qr_uniform_q:
+        d = torch.diag(r, 0)
+        q *= d.sign()
+
+    return q.T
+
+
 def gaussian_orthogonal_random_matrix(
     num_rows,
     num_cols,
+    scaling=0,
+    qr_uniform_q=False,
+    device=None,
 ):
-    pass
+    """
+    num_rows x num_cols 형태의 Random Matrix 를 생성하는 함수입니다.
+    """
+    num_full_block = int(num_rows / num_cols)
+
+    block_list = [
+        orthogonal_matrix_chunk(
+            num_cols=num_cols,
+            qr_uniform_q=qr_uniform_q,
+            device=device,
+        )
+        for _ in range(num_full_block)
+    ]
+
+    remaining_rows = num_rows - num_full_block * num_cols
+    if remaining_rows > 0:
+        q = orthogonal_matrix_chunk(
+            num_cols=num_cols,
+            qr_uniform_q=qr_uniform_q,
+            device=device,
+        )
+        block_list.append(q[:remaining_rows])
+
+    final_matrix = torch.cat(block_list)
+    
+    if scaling == 0:
+        multiplier = torch.rand((num_rows, num_cols), device=device).norm(dim=1)
+    elif scaling == 1:
+        multiplier = math.sqrt(num_cols) * torch.ones((num_rows, ), device=device)
+    else:
+        raise ValueError(f"Invalid Scaling {scaling}")
+
+    return torch.matmul(torch.diag(multiplier), final_matrix)
