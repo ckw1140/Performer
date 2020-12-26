@@ -132,8 +132,8 @@ class Decoder(nn.Module):
         hidden_dim,
         num_heads,
         self_attention_dropout_prob,
-        encoder_attention_dropout_prob,
-        feed_forwarg_dropout_prob,
+        dec_enc_attention_dropout_prob,
+        feed_forward_dropout_prob,
         layernorm_epsilon,
     ):
         super(Decoder, self).__init__()
@@ -147,12 +147,12 @@ class Decoder(nn.Module):
         self.dec_enc_attention = MultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            dropout_prob=encoder_attention_dropout_prob,
+            dropout_prob=dec_enc_attention_dropout_prob,
         )
 
         self.feed_forward = FeedForward(
             hidden_dim=hidden_dim,
-            dropout_prob=feed_forwarg_dropout_prob,
+            dropout_prob=feed_forward_dropout_prob,
         )
 
         self.self_attention_layernorm = nn.LayerNorm(hidden_dim, eps=layernorm_epsilon)
