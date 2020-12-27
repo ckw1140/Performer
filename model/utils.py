@@ -1,5 +1,5 @@
 """
-https://github.com/google-research/google-research/blob/master/performer/fast_attention/jax/fast_attention.py
+https://github.com/google-research/google-research/blob/master/performer/fast_attention/tensorflow/fast_attention.py
 https://github.com/lucidrains/performer-pytorch/blob/main/performer_pytorch/performer_pytorch.py
 
 위의 두 코드를 참고하여 작성한 코드입니다.
@@ -21,6 +21,7 @@ def gelu(x):
 def nonnegative_softmax_kernel_feature_creator(
     data,
     projection_matrix,
+    is_query=True,
     normalize_data=True,
     eps=1e-4,
 ):
@@ -28,8 +29,8 @@ def nonnegative_softmax_kernel_feature_creator(
     Softmax Kernel 의 Feature Map 입니다.
     반환하는 Kernel Feature 의 모든 원소가 nonnegative 입니다.
 
-    :param data: [batch_size, num_heads, sequence_length, head_dim] Tensor 입니다. (Queries 또는 Keys)
-    :param projection_matrix: [projection_dim, head_dim] Random Matrix 입니다.
+    :param data: [batch_size, sequence_length, num_heads, head_dim] Tensor 입니다. (Queries 또는 Keys)
+    :param projection_matrix: [num_feature, head_dim] Random Matrix 입니다.
     :normalize_data: normalization 이 필요한지 여부를 나타냅니다.
     """
 
@@ -38,23 +39,24 @@ def nonnegative_softmax_kernel_feature_creator(
 
     data_mod_shape = data.size()[:2] + projection_matrix.size()
 
-    # [batch_size, num_heads, projection_dim, head_dim]
+    # [batch_size, sequence_length, num_feature, head_dim]
     data_thick_random_matrix = torch.zeros(data_mod_shape) + projection_matrix
 
-    # [batch_size, num_heads, sequence_length, projection_dim]
+    # [batch_size, sequence_length, num_heads, num_feature]
     data_dash = torch.matmul(
         data_normalizer * data,
         data_thick_random_matrix.transpose(2, 3),
     )
 
-    # [batch_size, num_heads, sequence_length]
+    # [batch_size, sequence_length, num_heads]
     diag_data = data.square()
     diag_data = diag_data.sum(dim=-1)
 
-    # [batch_size, num_heads, sequence_length, 1]
+    # [batch_size, sequence_length, num_heads, 1]
     diag_data = (diag_data / 2.0) * data_normalizer * data_normalizer
     diag_data = diag_data.unsqueeze(-1)
 
+    # [batch_size, sequence_length, num_heads, num_featrue]
     data_dash = ratio * torch.exp(
         data_dash - diag_data - data_dash.max(dim=-1, keepdim=True).values + eps
     )

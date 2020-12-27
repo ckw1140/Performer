@@ -13,7 +13,7 @@ class FastMultiheadAttention(nn.Module):
         self,
         hidden_dim,
         num_heads,
-        projection_dim,
+        num_feature,
         scaling=0,
         qr_uniform_q=False,
     ):
@@ -27,7 +27,7 @@ class FastMultiheadAttention(nn.Module):
         self.WV = nn.Linear(hidden_dim, hidden_dim)
         self.WO = nn.Linear(hidden_dim, hidden_dim)
         self.projection_matrix = gaussian_orthogonal_random_matrix(
-            num_rows=projection_dim,
+            num_rows=num_feature,
             num_cols=self.head_dim,
             scaling=scaling,
             qr_uniform_q=qr_uniform_q,
@@ -41,23 +41,24 @@ class FastMultiheadAttention(nn.Module):
         K = self.split_heads(self.WK(key), batch_size)
         V = self.split_heads(self.WV(value), batch_size)
 
-        # [batch_size, num_heads, sequence_length, head_dim]
-        Q = nonnegative_softmax_kernel_feature_creator(
-            data=Q,
+        # [batch_size, sequence_length, num_heads, num_feature]
+        Q_prime = nonnegative_softmax_kernel_feature_creator(
+            data=Q.transpose(1, 2),
             projection_matrix=self.projection_matrix,
         )
-        K = nonnegative_softmax_kernel_feature_creator(
-            data=K,
+        K_prime = nonnegative_softmax_kernel_feature_creator(
+            data=K.transpose(1, 2),
             projection_matrix=self.projection_matrix,
         )
+
+        # [batch_size, sequence_length, num_heads, head_dim]
         attention_result = linear_attention(
-            query=Q,
-            key=K,
-            value=V,
+            query=Q_prime,
+            key=K_prime,
+            value=V.transpose(1, 2),
         )
 
         # [batch_size, sequence_length, hidden_dim]
-        attention_result = attention_result.transpose(1, 2).contiguous()
         attention_result = attention_result.view(batch_size, -1, self.hidden_dim)
         output = self.WO(attention_result)
         return output
@@ -91,7 +92,7 @@ class Encoder(nn.Module):
         self,
         hidden_dim,
         num_heads,
-        projection_dim,
+        num_feature,
         feed_forward_dropout_prob,
         layernorm_epsilon,
     ):
@@ -100,7 +101,7 @@ class Encoder(nn.Module):
         self.self_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            projection_dim=projection_dim,
+            num_feature=num_feature,
         )
 
         self.feed_forward = FeedForward(
@@ -128,8 +129,8 @@ class Decoder(nn.Module):
         self,
         hidden_dim,
         num_heads,
-        self_attention_projection_dim,
-        dec_enc_attention_projection_dim,
+        self_attention_num_feature,
+        dec_enc_attention_num_feature,
         feed_forward_dropout_prob,
         layernorm_epsilon,
     ):
@@ -138,13 +139,13 @@ class Decoder(nn.Module):
         self.self_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            projection_dim=self_attention_projection_dim,
+            num_feature=self_attention_num_feature,
         )
 
         self.dec_enc_attention = FastMultiheadAttention(
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            projection_dim=dec_enc_attention_projection_dim,
+            featrue_dim=dec_enc_attention_num_feature,
         )
 
         self.feed_forward = FeedForward(

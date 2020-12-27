@@ -7,7 +7,7 @@ def test_fast_attention():
     sequence_length = 16
     hidden_dim = 8
     num_heads = 4
-    projection_dim = 2
+    num_feature = 2
 
     query = torch.rand(batch_size, sequence_length, hidden_dim)
     key = torch.rand(batch_size, sequence_length, hidden_dim)
@@ -16,7 +16,7 @@ def test_fast_attention():
     fast_multihead_attention = FastMultiheadAttention(
         hidden_dim=hidden_dim,
         num_heads=num_heads,
-        projection_dim=projection_dim,
+        num_feature=num_feature,
     )
 
     outputs = fast_multihead_attention(
