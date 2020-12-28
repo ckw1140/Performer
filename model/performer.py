@@ -1,6 +1,7 @@
 from torch import nn
 
 from model.utils import (
+    denominator,
     gaussian_orthogonal_random_matrix,
     gelu,
     linear_attention,
@@ -41,22 +42,28 @@ class FastMultiheadAttention(nn.Module):
         K = self.split_heads(self.WK(key), batch_size)
         V = self.split_heads(self.WV(value), batch_size)
 
-        # [batch_size, sequence_length, num_heads, num_features]
+        # [batch_size, num_heads, sequence_length, num_features]
         Q_prime = nonnegative_softmax_kernel_feature_creator(
-            data=Q.transpose(1, 2),
+            data=Q,
             projection_matrix=self.projection_matrix,
         )
         K_prime = nonnegative_softmax_kernel_feature_creator(
-            data=K.transpose(1, 2),
+            data=K,
             projection_matrix=self.projection_matrix,
         )
+        denom = denominator(
+            query=Q_prime,
+            key=K_prime,
+        )
 
-        # [batch_size, sequence_length, num_heads, head_dim]
+        # [batch_size, num_heads, sequence_length, head_dim]
         attention_result = linear_attention(
             query=Q_prime,
             key=K_prime,
-            value=V.transpose(1, 2),
+            value=V,
         )
+
+        attention_result /= denom
 
         # [batch_size, sequence_length, hidden_dim]
         attention_result = attention_result.view(batch_size, -1, self.hidden_dim)
