@@ -29,8 +29,8 @@ def nonnegative_softmax_kernel_feature_creator(
     Softmax Kernel 의 Feature Map 입니다.
     반환하는 Kernel Feature 의 모든 원소가 nonnegative 입니다.
 
-    :param data: [batch_size, sequence_length, num_heads, head_dim] Tensor 입니다. (Queries 또는 Keys)
-    :param projection_matrix: [num_feature, head_dim] Random Matrix 입니다.
+    :param data: [batch_size, num_heads, sequence_length, head_dim] Tensor 입니다. (Queries 또는 Keys)
+    :param projection_matrix: [num_features, head_dim] Random Matrix 입니다.
     :normalize_data: normalization 이 필요한지 여부를 나타냅니다.
     """
 
@@ -39,24 +39,24 @@ def nonnegative_softmax_kernel_feature_creator(
 
     data_mod_shape = data.size()[:2] + projection_matrix.size()
 
-    # [batch_size, sequence_length, num_feature, head_dim]
+    # [batch_size, num_heads, num_features, head_dim]
     data_thick_random_matrix = torch.zeros(data_mod_shape) + projection_matrix
 
-    # [batch_size, sequence_length, num_heads, num_feature]
+    # [batch_size, num_heads, sequence_length, num_features]
     data_dash = torch.matmul(
         data_normalizer * data,
         data_thick_random_matrix.transpose(2, 3),
     )
 
-    # [batch_size, sequence_length, num_heads]
+    # [batch_size, num_heads, sequence_length]
     diag_data = data.square()
     diag_data = diag_data.sum(dim=-1)
 
-    # [batch_size, sequence_length, num_heads, 1]
+    # [batch_size, num_heads, sequence_length, 1]
     diag_data = (diag_data / 2.0) * data_normalizer * data_normalizer
     diag_data = diag_data.unsqueeze(-1)
 
-    # [batch_size, sequence_length, num_heads, num_featrue]
+    # [batch_size, num_heads, sequence_length, num_featrue]
     data_dash = ratio * torch.exp(
         data_dash - diag_data - data_dash.max(dim=-1, keepdim=True).values + eps
     )
@@ -72,7 +72,7 @@ def orthogonal_matrix_chunk(
     """
     num_cols x num_cols 형태의 Random Orthoginal Matrix 를 생성하는 함수입니다.
     """
-    unstructured_block = torch.rand((num_cols, num_cols))
+    unstructured_block = torch.normal(0, 1, size=(num_cols, num_cols))
     q, r = torch.qr(unstructured_block.cpu(), some=True)
     q = q.to(device)
     r = r.to(device)
@@ -124,6 +124,11 @@ def gaussian_orthogonal_random_matrix(
         raise ValueError(f"Invalid Scaling {scaling}")
 
     return torch.matmul(torch.diag(multiplier), final_matrix)
+
+
+def denominator(query, key):
+    key_sum = key.transpose(2, 3).sum(dim=-1)
+    return torch.matmul(query, key_sum.unsqueeze(dim=-1))
 
 
 def linear_attention(query, key, value):

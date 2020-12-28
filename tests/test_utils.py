@@ -2,6 +2,7 @@ import torch
 from torch.nn import functional as F
 
 from model.utils import (
+    denominator,
     gaussian_orthogonal_random_matrix,
     linear_attention,
     nonnegative_softmax_kernel_feature_creator,
@@ -43,6 +44,60 @@ def test_gaussian_orthogonal_random_matrix():
     assert projection_matrix.size() == (num_rows, num_cols)
 
 
+def test_denominator():
+    batch_size = 1
+    sequence_length = 16
+    num_heads = 1
+    head_dim = 8
+
+    query = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
+    key = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
+
+    assert torch.allclose(
+        torch.matmul(query, key.transpose(2, 3)).sum(dim=-1).unsqueeze(dim=-1),
+        denominator(query, key),
+    )
+
+
+def test_softmax_error():
+    batch_size = 1
+    sequence_length = 10000
+    num_heads = 1
+    head_dim = 8
+    num_features = 1000
+
+    query = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
+    key = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
+    projection_matrix = gaussian_orthogonal_random_matrix(
+        num_rows=num_features,
+        num_cols=head_dim,
+    )
+
+    query_prime = nonnegative_softmax_kernel_feature_creator(
+        data=query,
+        projection_matrix=projection_matrix,
+    )
+    key_prime = nonnegative_softmax_kernel_feature_creator(
+        data=key,
+        projection_matrix=projection_matrix,
+    )
+    denom = denominator(
+        query=query_prime,
+        key=key_prime,
+    )
+
+    fast_softmax = torch.matmul(query_prime, key_prime.transpose(2, 3))
+
+    scaled_dot_product = torch.matmul(query, key.transpose(2, 3)) / torch.sqrt(
+        torch.tensor(head_dim).float()
+    )
+    exact_softmax = F.softmax(scaled_dot_product, dim=-1)
+
+    max_error = 0.5
+    error = torch.abs(fast_softmax - exact_softmax)
+    assert torch.max(error) < max_error
+
+
 def test_linear_attention_shape():
     batch_size = 8
     sequence_length = 16
@@ -63,31 +118,39 @@ def test_linear_attention_error():
     sequence_length = 10000
     num_heads = 1
     head_dim = 8
-    num_feature = 1000
+    num_features = 1000
 
     query = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
     key = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
     value = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
-    
+
     projection_matrix = gaussian_orthogonal_random_matrix(
-        num_rows=num_feature,
+        num_rows=num_features,
         num_cols=head_dim,
     )
 
     query_prime = nonnegative_softmax_kernel_feature_creator(
-        data=query.transpose(1, 2),
+        data=query,
         projection_matrix=projection_matrix,
     )
     key_prime = nonnegative_softmax_kernel_feature_creator(
-        data=key.transpose(1, 2),
+        data=key,
         projection_matrix=projection_matrix,
     )
+    # [batch_size, num_heads, sequence_length, 1]
+    denom = denominator(
+        query=query_prime,
+        key=key_prime,
+    )
 
+    # [batch_size, num_heads, sequence_length, head_dim]
     fast_attention_result = linear_attention(
         query=query_prime,
         key=key_prime,
-        value=value.transpose(1, 2),
+        value=value,
     )
+
+    fast_attention_result /= denom
 
     scaled_dot_product = torch.matmul(query, key.transpose(2, 3)) / torch.sqrt(
         torch.tensor(head_dim).float()
