@@ -123,7 +123,7 @@ def test_linear_attention_error():
     query = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
     key = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
     value = torch.normal(0, 1, size=(batch_size, num_heads, sequence_length, head_dim))
-    
+
     projection_matrix = gaussian_orthogonal_random_matrix(
         num_rows=num_features,
         num_cols=head_dim,
